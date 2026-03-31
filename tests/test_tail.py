@@ -57,6 +57,26 @@ def test_tile_loads_gif_texture(qapp, tmp_path):
     assert tile._texture_movie.isValid() is True
 
 
+
+def test_tile_fit_title_layout_balances_multi_word_titles(qapp):
+    tile = Tile("Delivery IO")
+
+    layout = tile._fit_title_layout("Delivery IO", max_width=110)
+
+    assert len(layout["lines"]) == 2
+    assert layout["lines"] == ["DELIVERY", "IO"]
+    assert layout["line_widths"][0] >= layout["line_widths"][1]
+
+
+def test_tile_fit_title_layout_keeps_long_single_word_within_narrow_tile(qapp):
+    tile = Tile("SHOTGRID")
+
+    layout = tile._fit_title_layout("SHOTGRID", max_width=tile.width() - 40)
+
+    assert len(layout["lines"]) == 1
+    assert layout["max_width"] <= tile.width() - 40
+
+
 def test_india_now_uses_indian_timezone():
     now = india_now()
 

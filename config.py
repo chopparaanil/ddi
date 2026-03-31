@@ -40,14 +40,16 @@ def load_dashboard_config(group_names: Iterable[str] = ()) -> Dict[str, object]:
         }
 
     return {
+        "title": os.getenv("BOARD_TITLE", "D O T"),
+        "title_background": os.getenv("BOARD_TITLE_BACKGROUND", ""),
         "board_rows": board_rows,
         "groups": groups,
-        "bg_start": os.getenv("BOARD_BG_START", "#08121C"),
-        "bg_mid": os.getenv("BOARD_BG_MID", "#0D1822"),
-        "bg_end": os.getenv("BOARD_BG_END", "#12324A"),
-        "grid": os.getenv("BOARD_GRID", "#1B3E57"),
-        "glow_primary": os.getenv("BOARD_GLOW_PRIMARY", "#0E6BA8"),
-        "glow_secondary": os.getenv("BOARD_GLOW_SECONDARY", "#11806A"),
+        "bg_start": os.getenv("BOARD_BG_START", "#02050A"),
+        "bg_mid": os.getenv("BOARD_BG_MID", "#060B12"),
+        "bg_end": os.getenv("BOARD_BG_END", "#0A111B"),
+        "grid": os.getenv("BOARD_GRID", "#152637"),
+        "glow_primary": os.getenv("BOARD_GLOW_PRIMARY", "#123556"),
+        "glow_secondary": os.getenv("BOARD_GLOW_SECONDARY", "#1E4B64"),
         "label_color": os.getenv("BOARD_LABEL_COLOR", "#7FA8C7"),
         "topbar_fill": os.getenv("BOARD_TOPBAR_FILL", "rgba(3, 12, 19, 0.72)"),
     }
@@ -65,6 +67,7 @@ def load_apps():
         apps.append(
             {
                 "name": name,
+                "subtitle": os.getenv(f"APP_{index}_SUBTITLE", ""),
                 "path": os.getenv(f"APP_{index}_PATH", ""),
                 "size": parse_size(os.getenv(f"APP_{index}_SIZE", "1x1")),
                 "color": os.getenv(f"APP_{index}_COLOR", "#0078D7"),
@@ -73,6 +76,7 @@ def load_apps():
                 "group": os.getenv(f"APP_{index}_GROUP", "Apps"),
                 "type": os.getenv(f"APP_{index}_TYPE", ""),
                 "texture": texture,
+                "texture_mode": os.getenv(f"APP_{index}_TEXTURE_MODE", "cover").strip().lower(),
                 "row": parse_int(os.getenv(f"APP_{index}_ROW"), -1),
                 "col": parse_int(os.getenv(f"APP_{index}_COL"), -1),
             }

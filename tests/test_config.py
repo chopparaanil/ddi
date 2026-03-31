@@ -37,15 +37,30 @@ def test_load_dashboard_config_reads_group_positions(monkeypatch):
     assert dashboard["groups"]["Media"] == {"row": -1, "col": -1}
 
 
+def test_load_dashboard_config_reads_title(monkeypatch):
+    env = {
+        "BOARD_TITLE": "Dashboard X",
+        "BOARD_TITLE_BACKGROUND": "/tmp/title.gif",
+    }
+    monkeypatch.setattr(config.os, "getenv", lambda key, default=None: env.get(key, default))
+
+    dashboard = load_dashboard_config([])
+
+    assert dashboard["title"] == "Dashboard X"
+    assert dashboard["title_background"] == "/tmp/title.gif"
+
+
 def test_load_apps_reads_texture_env_var(monkeypatch):
     env = {
         "APP_1_NAME": "One",
+        "APP_1_SUBTITLE": "Primary",
         "APP_1_TEXTURE": "/tmp/alpha.gif",
     }
     monkeypatch.setattr(config.os, "getenv", lambda key, default=None: env.get(key, default))
 
     apps = load_apps()
 
+    assert apps[0]["subtitle"] == "Primary"
     assert apps[0]["texture"] == "/tmp/alpha.gif"
 
 

@@ -1,8 +1,11 @@
 import getpass
+import math
+import os
 import random
+from pathlib import Path
 
-from PyQt5.QtCore import Qt, QTimer, QPoint
-from PyQt5.QtGui import QPainter, QColor, QBrush, QLinearGradient, QRadialGradient, QFont, QPen, QKeySequence
+from PyQt5.QtCore import Qt, QTimer, QPoint, QRectF
+from PyQt5.QtGui import QPainter, QColor, QBrush, QLinearGradient, QRadialGradient, QFont, QPen, QMovie, QPixmap, QPainterPath
 from PyQt5.QtWidgets import (
     QWidget,
     QGridLayout,
@@ -12,6 +15,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QLineEdit,
     QFrame,
+    QPushButton,
     QSizePolicy,
 )
 
@@ -41,22 +45,45 @@ class HorizontalScrollArea(QScrollArea):
 
 
 class ParticleBG(QWidget):
+    COMET_COUNT = 8
+    COMET_MIN_Y = -0.24
+    COMET_MAX_Y = 0.36
+    COMET_INITIAL_DELAY_STEP = 26
+    COMET_INITIAL_DELAY_JITTER = (0, 8)
+    COMET_RESPAWN_DELAY = (90, 180)
+    COMET_SLOT_DELAY_STEP = 14
+
     def __init__(self, parent=None, theme=None):
         super().__init__(parent)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self._theme = {}
         self.set_theme(theme or {})
-        self._pts = [
+        self._stars_far = [
             {
                 "x": random.random(),
                 "y": random.random(),
-                "r": random.uniform(1.2, 3.8),
-                "vx": random.uniform(-0.00025, 0.00025),
-                "vy": random.uniform(-0.00018, 0.00018),
-                "a": random.uniform(0.04, 0.20),
+                "r": random.uniform(0.8, 1.8),
+                "vx": random.uniform(-0.00003, 0.00003),
+                "vy": random.uniform(-0.00002, 0.00002),
+                "a": random.uniform(0.08, 0.28),
             }
-            for _ in range(60)
+            for _ in range(95)
+        ]
+        self._stars_near = [
+            {
+                "x": random.random(),
+                "y": random.random(),
+                "r": random.uniform(1.2, 2.8),
+                "vx": random.uniform(-0.00008, 0.00008),
+                "vy": random.uniform(-0.00006, 0.00006),
+                "a": random.uniform(0.10, 0.40),
+            }
+            for _ in range(42)
+        ]
+        self._comets = [
+            self._random_comet(slot=index, delay_frames=self._comet_delay(index, initial=True))
+            for index in range(self.COMET_COUNT)
         ]
         timer = QTimer(self)
         timer.timeout.connect(self._step)
@@ -73,10 +100,63 @@ class ParticleBG(QWidget):
         }
         self.update()
 
+    def _comet_delay(self, slot, initial=False):
+        slot_index = max(0, int(slot or 0))
+        if initial:
+            return (slot_index * self.COMET_INITIAL_DELAY_STEP) + random.randint(*self.COMET_INITIAL_DELAY_JITTER)
+
+        base_delay, extra_delay = self.COMET_RESPAWN_DELAY
+        return base_delay + (slot_index * self.COMET_SLOT_DELAY_STEP) + random.randint(0, extra_delay)
+
+    def _random_comet(self, slot=None, delay_frames=0):
+        band_height = (self.COMET_MAX_Y - self.COMET_MIN_Y) / max(1, self.COMET_COUNT)
+        if slot is None:
+            y = random.uniform(self.COMET_MIN_Y, self.COMET_MAX_Y)
+        else:
+            band_start = self.COMET_MIN_Y + band_height * slot
+            y = random.uniform(band_start + band_height * 0.15, band_start + band_height * 0.85)
+
+        return {
+            "slot": slot,
+            "x": random.uniform(-0.42, -0.14),
+            "y": y,
+            "vx": random.uniform(0.0011, 0.0020),
+            "vy": random.uniform(0.0009, 0.0016),
+            "curve": random.uniform(0.000004, 0.000018),
+            "curve_dir": random.choice((-1, 1)),
+            "tail": random.uniform(0.09, 0.16),
+            "a": random.uniform(0.10, 0.18),
+            "life": -delay_frames,
+            "ttl": random.randint(150, 240),
+            "phase": random.uniform(0.0, math.tau),
+        }
+
     def _step(self):
-        for point in self._pts:
+        for point in self._stars_far:
             point["x"] = (point["x"] + point["vx"]) % 1.0
             point["y"] = (point["y"] + point["vy"]) % 1.0
+        for point in self._stars_near:
+            point["x"] = (point["x"] + point["vx"]) % 1.0
+            point["y"] = (point["y"] + point["vy"]) % 1.0
+        for comet in self._comets:
+            if comet["life"] < 0:
+                comet["life"] += 1
+                continue
+            comet["life"] += 1
+            comet["x"] += comet["vx"]
+            comet["y"] += comet["vy"] + math.sin(comet["phase"] + comet["life"] * 0.035) * comet["curve"] * comet["curve_dir"]
+            if (
+                comet["life"] >= comet["ttl"]
+                or comet["x"] - comet["tail"] > 1.08
+                or comet["y"] > 1.06
+                or comet["x"] < -0.30
+            ):
+                comet.update(
+                    self._random_comet(
+                        slot=comet.get("slot"),
+                        delay_frames=self._comet_delay(comet.get("slot")),
+                    )
+                )
         self.update()
 
     def paintEvent(self, _):
@@ -102,28 +182,163 @@ class ParticleBG(QWidget):
         glow_secondary.setColorAt(1, QColor(0, 0, 0, 0))
         painter.fillRect(0, 0, width, height, QBrush(glow_secondary))
 
-        vignette = QLinearGradient(0, 0, 0, height)
-        vignette.setColorAt(0, QColor(255, 255, 255, 6))
-        vignette.setColorAt(0.22, QColor(255, 255, 255, 0))
-        vignette.setColorAt(1, QColor(0, 0, 0, 96))
-        painter.fillRect(0, 0, width, height, QBrush(vignette))
-
         grid_color = QColor(self._theme["grid"])
-        painter.setPen(QPen(QColor(grid_color.red(), grid_color.green(), grid_color.blue(), 16), 1))
-        for x_pos in range(0, width, 60):
+        painter.setPen(QPen(QColor(grid_color.red(), grid_color.green(), grid_color.blue(), 8), 1))
+        for x_pos in range(0, width, 72):
             painter.drawLine(x_pos, 0, x_pos, height)
-        for y_pos in range(0, height, 60):
+        for y_pos in range(0, height, 72):
             painter.drawLine(0, y_pos, width, y_pos)
 
-        painter.setPen(QPen(QColor(grid_color.red(), grid_color.green(), grid_color.blue(), 7), 1))
-        for offset in range(-height, width, 120):
-            painter.drawLine(offset, 0, offset + height, height)
-
-        for point in self._pts:
+        for point in self._stars_far:
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(255, 255, 255, int(point["a"] * 255)))
             painter.drawEllipse(QPoint(int(point["x"] * width), int(point["y"] * height)), int(point["r"]), int(point["r"]))
 
+        for point in self._stars_near:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(220, 236, 255, int(point["a"] * 255)))
+            painter.drawEllipse(QPoint(int(point["x"] * width), int(point["y"] * height)), int(point["r"]), int(point["r"]))
+
+        for comet in self._comets:
+            if comet["life"] < 0:
+                continue
+
+            progress = max(0.0, min(1.0, comet["life"] / comet["ttl"]))
+            fade = math.sin(progress * math.pi)
+            if fade <= 0.03:
+                continue
+
+            head_x = comet["x"] * width
+            head_y = comet["y"] * height
+            tail_dx = comet["tail"] * width
+            slope = comet["vy"] / max(comet["vx"], 0.0001)
+            tail_dy = tail_dx * slope
+
+            comet_tail = QLinearGradient(head_x - tail_dx, head_y - tail_dy, head_x, head_y)
+            comet_tail.setColorAt(0, QColor(255, 255, 255, 0))
+            comet_tail.setColorAt(0.55, QColor(186, 222, 255, int(comet["a"] * fade * 110)))
+            comet_tail.setColorAt(1, QColor(255, 255, 255, int(comet["a"] * fade * 240)))
+            painter.setPen(QPen(QBrush(comet_tail), 2))
+            painter.drawLine(int(head_x - tail_dx), int(head_y - tail_dy), int(head_x), int(head_y))
+
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(244, 249, 255, min(255, int(comet["a"] * fade * 420))))
+            painter.drawEllipse(QPoint(int(head_x), int(head_y)), 2, 2)
+
+        vignette = QLinearGradient(0, 0, 0, height)
+        vignette.setColorAt(0, QColor(255, 255, 255, 4))
+        vignette.setColorAt(0.24, QColor(255, 255, 255, 0))
+        vignette.setColorAt(1, QColor(0, 0, 0, 126))
+        painter.fillRect(0, 0, width, height, QBrush(vignette))
+
+        painter.end()
+
+
+class TitleMedia(QWidget):
+    def __init__(self, title="IO", background_path="", parent=None):
+        super().__init__(parent)
+        self._title = title
+        self._background_path = ""
+        self._pixmap = None
+        self._movie = None
+        self._sync_width()
+        self.set_background(background_path)
+
+    def set_title(self, title):
+        self._title = title
+        self._sync_width()
+        self.update()
+
+    def _sync_width(self):
+        self.setFixedSize(max(180, 36 + len(self._title) * 17), 42)
+
+    def set_background(self, background_path):
+        self._background_path = background_path or ""
+        self._pixmap = None
+        if self._movie is not None:
+            self._movie.stop()
+            self._movie.deleteLater()
+            self._movie = None
+
+        if not self._background_path:
+            self.update()
+            return
+
+        path = Path(self._background_path).expanduser()
+        if not path.exists():
+            self.update()
+            return
+
+        if path.suffix.lower() == ".gif":
+            if os.getenv("QT_QPA_PLATFORM", "").lower() == "offscreen":
+                self.update()
+                return
+            movie = QMovie(str(path), b"", self)
+            if movie.isValid():
+                movie.frameChanged.connect(self.update)
+                movie.start()
+                self._movie = movie
+                self.update()
+                return
+
+        pixmap = QPixmap(str(path))
+        if not pixmap.isNull():
+            self._pixmap = pixmap
+        self.update()
+
+    def _current_pixmap(self):
+        if self._movie is not None:
+            pixmap = self._movie.currentPixmap()
+            if not pixmap.isNull():
+                return pixmap
+        return self._pixmap
+
+    def paintEvent(self, _):
+        width, height = self.width(), self.height()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        rect = QRectF(0.5, 0.5, width - 1, height - 1)
+        path = QPainterPath()
+        path.addRoundedRect(rect, 14, 14)
+        painter.save()
+        painter.setClipPath(path)
+
+        pixmap = self._current_pixmap()
+        if pixmap is not None and not pixmap.isNull():
+            scaled = pixmap.scaled(width, height, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            source_x = max(0, (scaled.width() - width) // 2)
+            source_y = max(0, (scaled.height() - height) // 2)
+            painter.drawPixmap(0, 0, scaled, source_x, source_y, width, height)
+        else:
+            fill = QLinearGradient(0, 0, width, height)
+            fill.setColorAt(0, QColor(10, 18, 28, 210))
+            fill.setColorAt(1, QColor(22, 34, 44, 190))
+            painter.fillRect(0, 0, width, height, QBrush(fill))
+
+        overlay = QLinearGradient(0, 0, width, height)
+        overlay.setColorAt(0, QColor(8, 12, 16, 38))
+        overlay.setColorAt(1, QColor(4, 6, 10, 122))
+        painter.fillRect(0, 0, width, height, QBrush(overlay))
+        painter.restore()
+
+        painter.setBrush(QColor(255, 255, 255, 18))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(QRectF(10, 10, 4, height - 20), 2, 2)
+
+        font = QFont("Segoe UI Light", 24)
+        font.setWeight(QFont.Light)
+        font.setLetterSpacing(QFont.AbsoluteSpacing, 3)
+        painter.setFont(font)
+        text_rect = QRectF(18, 0, width - 28, height)
+        painter.setPen(QColor(0, 0, 0, 90))
+        painter.drawText(text_rect.translated(0, 1), Qt.AlignVCenter | Qt.AlignLeft, self._title)
+        painter.setPen(QColor(245, 248, 251, 242))
+        painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, self._title)
+
+        painter.setPen(QPen(QColor(255, 255, 255, 24), 1))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(rect, 14, 14)
         painter.end()
 
 
@@ -137,12 +352,8 @@ class TopBar(QWidget):
         layout.setContentsMargins(28, 0, 28, 0)
         layout.setSpacing(14)
 
-        label = QLabel(title)
-        font = QFont("Segoe UI Light", 28)
-        font.setWeight(QFont.Light)
-        label.setFont(font)
-        label.setStyleSheet("color: white; background: transparent;")
-        layout.addWidget(label)
+        self._title_media = TitleMedia(title, parent=self)
+        layout.addWidget(self._title_media)
 
         self._search = QLineEdit()
         self._search.setPlaceholderText("Search")
@@ -167,9 +378,38 @@ class TopBar(QWidget):
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout.addWidget(spacer)
 
-        user_label = QLabel(getpass.getuser())
-        user_label.setStyleSheet("color: rgba(255,255,255,0.70); font-size: 13px; margin-left: 10px; background: transparent;")
-        layout.addWidget(user_label)
+        self._user_label = QLabel(getpass.getuser())
+        self._user_label.setStyleSheet("color: rgba(255,255,255,0.70); font-size: 13px; margin-left: 10px; background: transparent;")
+        layout.addWidget(self._user_label)
+
+        self._gif_toggle = QPushButton("GIF")
+        self._gif_toggle.setCheckable(True)
+        self._gif_toggle.setChecked(True)
+        self._gif_toggle.setFixedSize(44, 24)
+        self._gif_toggle.setCursor(Qt.PointingHandCursor)
+        self._gif_toggle.setToolTip("Toggle animated tile GIFs")
+        self._gif_toggle.setStyleSheet(
+            """
+            QPushButton {
+                background: rgba(255,255,255,0.08);
+                border: 1px solid rgba(255,255,255,0.18);
+                color: rgba(255,255,255,0.86);
+                font-size: 10px;
+                font-weight: 600;
+                border-radius: 12px;
+                padding: 0 8px;
+            }
+            QPushButton:checked {
+                background: rgba(126,186,227,0.24);
+                border: 1px solid rgba(186,226,255,0.44);
+                color: white;
+            }
+            QPushButton:hover {
+                border: 1px solid rgba(255,255,255,0.32);
+            }
+            """
+        )
+        layout.addWidget(self._gif_toggle)
 
     def apply_theme(self, theme):
         topbar_fill = theme.get("topbar_fill", "rgba(3, 12, 19, 0.72)")
@@ -179,6 +419,18 @@ class TopBar(QWidget):
 
     def connect_search(self, callback):
         self._search.textChanged.connect(callback)
+
+    def connect_gif_toggle(self, callback):
+        self._gif_toggle.toggled.connect(callback)
+
+    def set_title(self, title):
+        self._title_media.set_title(title)
+
+    def set_title_background(self, background_path):
+        self._title_media.set_background(background_path)
+
+    def set_gif_toggle_state(self, enabled):
+        self._gif_toggle.setChecked(bool(enabled))
 
 
 class GroupLabel(QLabel):
@@ -205,6 +457,7 @@ class Dashboard(QWidget):
         super().__init__()
         self._apps = load_apps() if apps is None else list(apps)
         self._current_filter = ""
+        self._tile_gifs_enabled = True
         self._group_specs = []
         self._groups = []
         self._all_tiles = []
@@ -221,7 +474,7 @@ class Dashboard(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        self._topbar = TopBar("dot", parent=self)
+        self._topbar = TopBar("D O T", parent=self)
         root.addWidget(self._topbar)
 
         self._scroll = HorizontalScrollArea()
@@ -270,6 +523,7 @@ class Dashboard(QWidget):
 
         self._build(self._apps)
         self._topbar.connect_search(self._filter)
+        self._topbar.connect_gif_toggle(self._set_tile_gifs_enabled)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -305,6 +559,11 @@ class Dashboard(QWidget):
         viewport_height = self._scroll.viewport().height()
         self._inner.resize(max(width, viewport_width), max(height, viewport_height))
         self._inner.setMinimumSize(max(width, viewport_width), max(height, viewport_height))
+
+    def _set_tile_gifs_enabled(self, enabled):
+        self._tile_gifs_enabled = bool(enabled)
+        for tile, _ in self._all_tiles:
+            tile.set_animated_texture(self._tile_gifs_enabled)
 
     def _filter(self, text):
         self._current_filter = text
@@ -342,19 +601,36 @@ class Dashboard(QWidget):
             app = item["app"]
             app_type = app.get("type", "").lower()
             if app_type == "clock":
-                tile = ClockTile(name=app["name"], size=app["size"], color=app["color"], texture=app.get("texture", ""))
+                tile = ClockTile(
+                    name=app["name"],
+                    size=app["size"],
+                    color=app["color"],
+                    texture=app.get("texture", ""),
+                    subtitle=app.get("subtitle", ""),
+                    texture_mode=app.get("texture_mode", "cover"),
+                )
             elif app_type == "date":
-                tile = DateTile(name=app["name"], size=app["size"], color=app["color"], texture=app.get("texture", ""))
+                tile = DateTile(
+                    name=app["name"],
+                    size=app["size"],
+                    color=app["color"],
+                    texture=app.get("texture", ""),
+                    subtitle=app.get("subtitle", ""),
+                    texture_mode=app.get("texture_mode", "cover"),
+                )
             else:
                 tile = Tile(
                     name=app["name"],
+                    subtitle=app.get("subtitle", ""),
                     path=app.get("path"),
                     size=app["size"],
                     color=app["color"],
                     icon=app.get("icon", ""),
                     badge=app.get("badge", ""),
                     texture=app.get("texture", ""),
+                    texture_mode=app.get("texture_mode", "cover"),
                 )
+            tile.set_animated_texture(self._tile_gifs_enabled)
             tiles.append((tile, app["name"]))
             self._all_tiles.append((tile, app["name"]))
             grid.addWidget(tile, item["row"], item["col"], item["row_span"], item["col_span"])
@@ -388,6 +664,11 @@ class Dashboard(QWidget):
         self._layout_config = load_dashboard_config(grouped_apps.keys())
         self._bg.set_theme(self._layout_config)
         self._topbar.apply_theme(self._layout_config)
+        self._topbar.set_gif_toggle_state(self._tile_gifs_enabled)
+        title = self._layout_config.get("title", "D O T")
+        self._topbar.set_title(title)
+        self._topbar.set_title_background(self._layout_config.get("title_background", ""))
+        self.setWindowTitle(title)
         self._tile_row_capacity = self._available_tile_rows()
 
         for group_name, group_apps in grouped_apps.items():
