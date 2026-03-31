@@ -1,15 +1,16 @@
 from PyQt5.QtCore import QPoint, QPointF, Qt
-from PyQt5.QtGui import QColor, QPixmap, QWheelEvent
+from PyQt5.QtGui import QColor, QMovie, QPixmap, QWheelEvent
 from PyQt5.QtWidgets import QWidget
 
 import ui
 from tail import Tile
-from ui import Dashboard, HorizontalScrollArea
+from ui import Dashboard, HorizontalScrollArea, ParticleBG
 
 
-def make_app(name, group="Apps", row=-1, col=-1, size=(1, 1), app_type="", texture=""):
+def make_app(name, group="Apps", row=-1, col=-1, size=(1, 1), app_type="", texture="", subtitle=""):
     return {
         "name": name,
+        "subtitle": subtitle,
         "path": "",
         "size": size,
         "color": "#123456",
@@ -21,6 +22,14 @@ def make_app(name, group="Apps", row=-1, col=-1, size=(1, 1), app_type="", textu
         "row": row,
         "col": col,
     }
+
+
+def write_test_gif(path):
+    path.write_bytes(
+        b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!"
+        b"\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00"
+        b"\x00\x02\x02L\x01\x00;"
+    )
 
 
 def test_dashboard_filter_only_hides_non_matching_tiles(qapp):
@@ -90,6 +99,63 @@ def test_dashboard_passes_texture_to_tiles(qapp, tmp_path):
     assert tile._has_texture() is True
 
 
+def test_dashboard_passes_subtitle_to_tiles(qapp):
+    window = Dashboard(apps=[make_app("Alpha", subtitle="Primary Tool")])
+    tile, _ = window._all_tiles[0]
+
+    assert tile._subtitle == "Primary Tool"
+
+
+def test_dashboard_gif_toggle_pauses_and_restores_tile_animation(qapp, tmp_path):
+    texture = tmp_path / "tile.gif"
+    write_test_gif(texture)
+
+    window = Dashboard(apps=[make_app("Animated", texture=str(texture))])
+    qapp.processEvents()
+
+    tile, _ = window._all_tiles[0]
+
+    assert tile._texture_movie is not None
+    assert tile._texture_movie.state() == QMovie.Running
+
+    window._topbar._gif_toggle.click()
+    qapp.processEvents()
+
+    assert window._tile_gifs_enabled is False
+    assert tile._texture_movie.state() == QMovie.Paused
+
+    window._build(window._apps)
+    qapp.processEvents()
+    rebuilt_tile, _ = window._all_tiles[0]
+
+    assert rebuilt_tile._texture_movie is not None
+    assert rebuilt_tile._texture_movie.state() == QMovie.Paused
+
+    window._topbar._gif_toggle.click()
+    qapp.processEvents()
+
+    assert window._tile_gifs_enabled is True
+    assert rebuilt_tile._texture_movie.state() == QMovie.Running
+
+
+def test_particle_bg_staggers_comet_delays(qapp):
+    bg = ParticleBG()
+
+    initial_delays = sorted(-comet["life"] for comet in bg._comets)
+
+    assert len(bg._comets) == bg.COMET_COUNT
+    assert initial_delays[1] - initial_delays[0] >= (bg.COMET_INITIAL_DELAY_STEP - bg.COMET_INITIAL_DELAY_JITTER[1])
+    assert initial_delays[-1] - initial_delays[0] >= (bg.COMET_INITIAL_DELAY_STEP * (bg.COMET_COUNT - 1)) - bg.COMET_INITIAL_DELAY_JITTER[1]
+
+
+def test_particle_bg_respawn_delay_grows_by_slot(qapp, monkeypatch):
+    bg = ParticleBG()
+    monkeypatch.setattr(ui.random, "randint", lambda start, end: 0)
+
+    assert bg._comet_delay(0) == bg.COMET_RESPAWN_DELAY[0]
+    assert bg._comet_delay(bg.COMET_COUNT - 1) == bg.COMET_RESPAWN_DELAY[0] + ((bg.COMET_COUNT - 1) * bg.COMET_SLOT_DELAY_STEP)
+
+
 def test_dashboard_uses_board_spacing_constant():
     assert Dashboard.SECTION_SPACING == Tile.GAP * 2
 
@@ -154,3 +220,22 @@ def test_dashboard_resize_rebuild_keeps_groups_visible(qapp):
 
     assert any(not spec["container"].isHidden() for spec in window._group_specs)
     assert len(window._all_tiles) == 2
+
+
+def test_dashboard_uses_configured_title(qapp, monkeypatch):
+    monkeypatch.setattr(
+        ui,
+        "load_dashboard_config",
+        lambda group_names: {
+            "title": "Workbench",
+            "title_background": "/tmp/title.gif",
+            "board_rows": 2,
+            "groups": {name: {"row": -1, "col": -1} for name in group_names},
+        },
+    )
+
+    window = Dashboard(apps=[make_app("Alpha")])
+
+    assert window.windowTitle() == "Workbench"
+    assert window._topbar._title_media._title == "Workbench"
+    assert window._topbar._title_media._background_path == "/tmp/title.gif"
