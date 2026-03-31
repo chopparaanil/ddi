@@ -45,13 +45,13 @@ class HorizontalScrollArea(QScrollArea):
 
 
 class ParticleBG(QWidget):
-    COMET_COUNT = 8
-    COMET_MIN_Y = -0.24
-    COMET_MAX_Y = 0.36
-    COMET_INITIAL_DELAY_STEP = 26
-    COMET_INITIAL_DELAY_JITTER = (0, 8)
-    COMET_RESPAWN_DELAY = (90, 180)
-    COMET_SLOT_DELAY_STEP = 14
+    COMET_COUNT = 10
+    COMET_MIN_Y = -0.20
+    COMET_MAX_Y = 0.32
+    COMET_INITIAL_DELAY_STEP = 10
+    COMET_INITIAL_DELAY_JITTER = (0, 4)
+    COMET_RESPAWN_DELAY = (28, 54)
+    COMET_SLOT_DELAY_STEP = 8
 
     def __init__(self, parent=None, theme=None):
         super().__init__(parent)
@@ -118,14 +118,14 @@ class ParticleBG(QWidget):
 
         return {
             "slot": slot,
-            "x": random.uniform(-0.42, -0.14),
+            "x": random.uniform(-0.26, 0.02),
             "y": y,
-            "vx": random.uniform(0.0011, 0.0020),
-            "vy": random.uniform(0.0009, 0.0016),
-            "curve": random.uniform(0.000004, 0.000018),
+            "vx": random.uniform(0.0013, 0.0022),
+            "vy": random.uniform(0.0010, 0.0017),
+            "curve": random.uniform(0.000006, 0.000020),
             "curve_dir": random.choice((-1, 1)),
-            "tail": random.uniform(0.09, 0.16),
-            "a": random.uniform(0.10, 0.18),
+            "tail": random.uniform(0.11, 0.19),
+            "a": random.uniform(0.34, 0.52),
             "life": -delay_frames,
             "ttl": random.randint(150, 240),
             "phase": random.uniform(0.0, math.tau),
@@ -216,13 +216,13 @@ class ParticleBG(QWidget):
 
             comet_tail = QLinearGradient(head_x - tail_dx, head_y - tail_dy, head_x, head_y)
             comet_tail.setColorAt(0, QColor(255, 255, 255, 0))
-            comet_tail.setColorAt(0.55, QColor(186, 222, 255, int(comet["a"] * fade * 110)))
-            comet_tail.setColorAt(1, QColor(255, 255, 255, int(comet["a"] * fade * 240)))
+            comet_tail.setColorAt(0.55, QColor(186, 222, 255, min(255, int(comet["a"] * fade * 180))))
+            comet_tail.setColorAt(1, QColor(255, 255, 255, min(255, int(comet["a"] * fade * 320))))
             painter.setPen(QPen(QBrush(comet_tail), 2))
             painter.drawLine(int(head_x - tail_dx), int(head_y - tail_dy), int(head_x), int(head_y))
 
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(244, 249, 255, min(255, int(comet["a"] * fade * 420))))
+            painter.setBrush(QColor(244, 249, 255, min(255, int(comet["a"] * fade * 560))))
             painter.drawEllipse(QPoint(int(head_x), int(head_y)), 2, 2)
 
         vignette = QLinearGradient(0, 0, 0, height)
