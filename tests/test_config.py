@@ -1,5 +1,5 @@
 import config
-from config import load_apps, load_dashboard_config, normalize_group_key, parse_int, parse_size
+from config import load_apps, load_dashboard_config, normalize_group_key, parse_bool, parse_int, parse_size
 
 
 def test_parse_size_accepts_valid_sizes():
@@ -15,6 +15,13 @@ def test_parse_int_returns_default_for_invalid_values():
     assert parse_int("7") == 7
     assert parse_int(None, default=5) == 5
     assert parse_int("abc", default=9) == 9
+
+
+def test_parse_bool_accepts_common_values():
+    assert parse_bool("yes") is True
+    assert parse_bool("0") is False
+    assert parse_bool(None, default=True) is True
+    assert parse_bool("maybe", default=False) is False
 
 
 def test_normalize_group_key_coerces_group_names_to_env_keys():
@@ -48,6 +55,21 @@ def test_load_dashboard_config_reads_title(monkeypatch):
 
     assert dashboard["title"] == "Dashboard X"
     assert dashboard["title_background"] == "/tmp/title.gif"
+
+
+def test_load_dashboard_config_reads_performance_options(monkeypatch):
+    env = {
+        "BOARD_TILE_GIFS_ENABLED": "true",
+        "BOARD_BACKGROUND_ANIMATION": "1",
+        "BOARD_BACKGROUND_FPS": "12",
+    }
+    monkeypatch.setattr(config.os, "getenv", lambda key, default=None: env.get(key, default))
+
+    dashboard = load_dashboard_config([])
+
+    assert dashboard["tile_gifs_enabled"] is True
+    assert dashboard["background_animation"] is True
+    assert dashboard["background_fps"] == 12
 
 
 def test_load_apps_reads_texture_env_var(monkeypatch):
