@@ -53,11 +53,14 @@ class ParticleBG(QWidget):
     COMET_RESPAWN_DELAY = (28, 54)
     COMET_SLOT_DELAY_STEP = 8
 
-    def __init__(self, parent=None, theme=None):
+    def __init__(self, parent=None, theme=None, animated=False, fps=8):
         super().__init__(parent)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self._theme = {}
+        self._animation_interval_ms = self._interval_for_fps(fps)
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._step)
         self.set_theme(theme or {})
         self._stars_far = [
             {
@@ -85,9 +88,20 @@ class ParticleBG(QWidget):
             self._random_comet(slot=index, delay_frames=self._comet_delay(index, initial=True))
             for index in range(self.COMET_COUNT)
         ]
-        timer = QTimer(self)
-        timer.timeout.connect(self._step)
-        timer.start(40)
+        self.set_animation_enabled(animated)
+
+    def _interval_for_fps(self, fps):
+        return int(1000 / min(30, max(1, int(fps or 8))))
+
+    def set_animation_enabled(self, enabled, fps=None):
+        if fps is not None:
+            self._animation_interval_ms = self._interval_for_fps(fps)
+
+        if enabled:
+            self._timer.start(self._animation_interval_ms)
+        else:
+            self._timer.stop()
+        self.update()
 
     def set_theme(self, theme):
         self._theme = {
@@ -235,12 +249,13 @@ class ParticleBG(QWidget):
 
 
 class TitleMedia(QWidget):
-    def __init__(self, title="IO", background_path="", parent=None):
+    def __init__(self, title="IO", background_path="", parent=None, animated=True):
         super().__init__(parent)
         self._title = title
         self._background_path = ""
         self._pixmap = None
         self._movie = None
+        self._animated = bool(animated)
         self._sync_width()
         self.set_background(background_path)
 
@@ -277,6 +292,7 @@ class TitleMedia(QWidget):
             if movie.isValid():
                 movie.frameChanged.connect(self.update)
                 movie.start()
+                movie.setPaused(not self._animated)
                 self._movie = movie
                 self.update()
                 return
@@ -292,6 +308,12 @@ class TitleMedia(QWidget):
             if not pixmap.isNull():
                 return pixmap
         return self._pixmap
+
+    def set_animated(self, enabled):
+        self._animated = bool(enabled)
+        if self._movie is not None:
+            self._movie.setPaused(not self._animated)
+        self.update()
 
     def paintEvent(self, _):
         width, height = self.width(), self.height()
@@ -343,7 +365,7 @@ class TitleMedia(QWidget):
 
 
 class TopBar(QWidget):
-    def __init__(self, title="IO", parent=None):
+    def __init__(self, title="IO", parent=None, gifs_enabled=True):
         super().__init__(parent)
         self.setFixedHeight(58)
         self.apply_theme({})
@@ -352,7 +374,7 @@ class TopBar(QWidget):
         layout.setContentsMargins(28, 0, 28, 0)
         layout.setSpacing(14)
 
-        self._title_media = TitleMedia(title, parent=self)
+        self._title_media = TitleMedia(title, parent=self, animated=gifs_enabled)
         layout.addWidget(self._title_media)
 
         self._search = QLineEdit()
@@ -384,7 +406,7 @@ class TopBar(QWidget):
 
         self._gif_toggle = QPushButton("GIF")
         self._gif_toggle.setCheckable(True)
-        self._gif_toggle.setChecked(True)
+        self._gif_toggle.setChecked(bool(gifs_enabled))
         self._gif_toggle.setFixedSize(44, 24)
         self._gif_toggle.setCursor(Qt.PointingHandCursor)
         self._gif_toggle.setToolTip("Toggle animated tile GIFs")
@@ -429,6 +451,9 @@ class TopBar(QWidget):
     def set_title_background(self, background_path):
         self._title_media.set_background(background_path)
 
+    def set_animated_media(self, enabled):
+        self._title_media.set_animated(enabled)
+
     def set_gif_toggle_state(self, enabled):
         self._gif_toggle.setChecked(bool(enabled))
 
@@ -457,7 +482,6 @@ class Dashboard(QWidget):
         super().__init__()
         self._apps = load_apps() if apps is None else list(apps)
         self._current_filter = ""
-        self._tile_gifs_enabled = True
         self._group_specs = []
         self._groups = []
         self._all_tiles = []
@@ -467,14 +491,20 @@ class Dashboard(QWidget):
         self.setMinimumSize(900, 560)
 
         self._layout_config = load_dashboard_config(())
-        self._bg = ParticleBG(self, theme=self._layout_config)
+        self._tile_gifs_enabled = bool(self._layout_config.get("tile_gifs_enabled", False))
+        self._bg = ParticleBG(
+            self,
+            theme=self._layout_config,
+            animated=self._layout_config.get("background_animation", False),
+            fps=self._layout_config.get("background_fps", 8),
+        )
         self._bg.lower()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        self._topbar = TopBar("D O T", parent=self)
+        self._topbar = TopBar("D O T", parent=self, gifs_enabled=self._tile_gifs_enabled)
         root.addWidget(self._topbar)
 
         self._scroll = HorizontalScrollArea()
@@ -562,6 +592,7 @@ class Dashboard(QWidget):
 
     def _set_tile_gifs_enabled(self, enabled):
         self._tile_gifs_enabled = bool(enabled)
+        self._topbar.set_animated_media(self._tile_gifs_enabled)
         for tile, _ in self._all_tiles:
             tile.set_animated_texture(self._tile_gifs_enabled)
 
@@ -663,11 +694,16 @@ class Dashboard(QWidget):
         grouped_apps = self._group_apps(self._apps)
         self._layout_config = load_dashboard_config(grouped_apps.keys())
         self._bg.set_theme(self._layout_config)
+        self._bg.set_animation_enabled(
+            self._layout_config.get("background_animation", False),
+            self._layout_config.get("background_fps", 8),
+        )
         self._topbar.apply_theme(self._layout_config)
         self._topbar.set_gif_toggle_state(self._tile_gifs_enabled)
         title = self._layout_config.get("title", "D O T")
         self._topbar.set_title(title)
         self._topbar.set_title_background(self._layout_config.get("title_background", ""))
+        self._topbar.set_animated_media(self._tile_gifs_enabled)
         self.setWindowTitle(title)
         self._tile_row_capacity = self._available_tile_rows()
 

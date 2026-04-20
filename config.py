@@ -21,6 +21,18 @@ def parse_int(value, default=-1):
         return default
 
 
+def parse_bool(value, default=False):
+    if value is None:
+        return default
+
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on", "enabled"}:
+        return True
+    if normalized in {"0", "false", "no", "off", "disabled"}:
+        return False
+    return default
+
+
 def normalize_group_key(name):
     raw = "".join(char if char.isalnum() else "_" for char in str(name).upper())
     while "__" in raw:
@@ -30,6 +42,7 @@ def normalize_group_key(name):
 
 def load_dashboard_config(group_names: Iterable[str] = ()) -> Dict[str, object]:
     board_rows = max(1, parse_int(os.getenv("BOARD_ROWS"), 2))
+    background_fps = parse_int(os.getenv("BOARD_BACKGROUND_FPS"), 8)
     groups = {}
 
     for group_name in group_names:
@@ -52,6 +65,9 @@ def load_dashboard_config(group_names: Iterable[str] = ()) -> Dict[str, object]:
         "glow_secondary": os.getenv("BOARD_GLOW_SECONDARY", "#1E4B64"),
         "label_color": os.getenv("BOARD_LABEL_COLOR", "#7FA8C7"),
         "topbar_fill": os.getenv("BOARD_TOPBAR_FILL", "rgba(3, 12, 19, 0.72)"),
+        "tile_gifs_enabled": parse_bool(os.getenv("BOARD_TILE_GIFS_ENABLED"), False),
+        "background_animation": parse_bool(os.getenv("BOARD_BACKGROUND_ANIMATION"), False),
+        "background_fps": min(30, max(1, background_fps)),
     }
 
 

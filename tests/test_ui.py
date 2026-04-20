@@ -116,26 +116,73 @@ def test_dashboard_gif_toggle_pauses_and_restores_tile_animation(qapp, tmp_path)
     tile, _ = window._all_tiles[0]
 
     assert tile._texture_movie is not None
-    assert tile._texture_movie.state() == QMovie.Running
+    assert tile._texture_movie.state() == QMovie.Paused
+    assert window._tile_gifs_enabled is False
 
     window._topbar._gif_toggle.click()
     qapp.processEvents()
 
-    assert window._tile_gifs_enabled is False
-    assert tile._texture_movie.state() == QMovie.Paused
+    assert window._tile_gifs_enabled is True
+    assert tile._texture_movie.state() == QMovie.Running
 
     window._build(window._apps)
     qapp.processEvents()
     rebuilt_tile, _ = window._all_tiles[0]
 
     assert rebuilt_tile._texture_movie is not None
-    assert rebuilt_tile._texture_movie.state() == QMovie.Paused
+    assert rebuilt_tile._texture_movie.state() == QMovie.Running
 
     window._topbar._gif_toggle.click()
     qapp.processEvents()
 
+    assert window._tile_gifs_enabled is False
+    assert rebuilt_tile._texture_movie.state() == QMovie.Paused
+
+
+def test_dashboard_config_can_enable_tile_gifs_by_default(qapp, tmp_path, monkeypatch):
+    texture = tmp_path / "tile.gif"
+    write_test_gif(texture)
+
+    monkeypatch.setattr(
+        ui,
+        "load_dashboard_config",
+        lambda group_names: {
+            "title": "D O T",
+            "title_background": "",
+            "board_rows": 2,
+            "groups": {name: {"row": -1, "col": -1} for name in group_names},
+            "tile_gifs_enabled": True,
+            "background_animation": False,
+            "background_fps": 8,
+        },
+    )
+
+    window = Dashboard(apps=[make_app("Animated", texture=str(texture))])
+    qapp.processEvents()
+    tile, _ = window._all_tiles[0]
+
     assert window._tile_gifs_enabled is True
-    assert rebuilt_tile._texture_movie.state() == QMovie.Running
+    assert window._topbar._gif_toggle.isChecked() is True
+    assert tile._texture_movie is not None
+    assert tile._texture_movie.state() == QMovie.Running
+
+
+def test_dashboard_gif_toggle_controls_title_media(qapp, tmp_path, monkeypatch):
+    texture = tmp_path / "title.gif"
+    write_test_gif(texture)
+    monkeypatch.setattr(ui.os, "getenv", lambda key, default=None: "" if key == "QT_QPA_PLATFORM" else default)
+
+    window = Dashboard(apps=[make_app("Alpha")])
+    window._topbar.set_title_background(str(texture))
+    qapp.processEvents()
+
+    assert window._topbar._title_media._movie is not None
+    assert window._topbar._title_media._movie.state() == QMovie.Paused
+
+    window._topbar._gif_toggle.click()
+    qapp.processEvents()
+
+    assert window._topbar._title_media._movie.state() == QMovie.Running
 
 
 def test_particle_bg_staggers_comet_delays(qapp):
@@ -146,6 +193,19 @@ def test_particle_bg_staggers_comet_delays(qapp):
     assert len(bg._comets) == bg.COMET_COUNT
     assert initial_delays[1] - initial_delays[0] >= (bg.COMET_INITIAL_DELAY_STEP - bg.COMET_INITIAL_DELAY_JITTER[1])
     assert initial_delays[-1] - initial_delays[0] >= (bg.COMET_INITIAL_DELAY_STEP * (bg.COMET_COUNT - 1)) - bg.COMET_INITIAL_DELAY_JITTER[1]
+
+
+def test_particle_bg_animation_is_disabled_by_default(qapp):
+    bg = ParticleBG()
+
+    assert bg._timer.isActive() is False
+
+
+def test_particle_bg_animation_can_be_enabled(qapp):
+    bg = ParticleBG(animated=True, fps=5)
+
+    assert bg._timer.isActive() is True
+    assert bg._timer.interval() == 200
 
 
 def test_particle_bg_respawn_delay_grows_by_slot(qapp, monkeypatch):
